@@ -1,0 +1,612 @@
+{
+  "name": "ERP CRM Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "erp-crm-sync",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "9c35dd58-3b9d-4e43-8fb1-62c5250e6c30",
+      "name": "Receive ERP Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        0
+      ],
+      "webhookId": "erp-crm-sync"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ed7a40ad-22bb-4416-8b74-1d862fd0f921",
+              "name": "eventId",
+              "value": "={{ $json.body.eventId || $json.headers['x-request-id'] || $execution.id }}",
+              "type": "string"
+            },
+            {
+              "id": "3103ba92-41a8-40f3-a3d6-bef36537a277",
+              "name": "customerId",
+              "value": "={{ $json.body.customerId || $json.body.customer?.id }}",
+              "type": "string"
+            },
+            {
+              "id": "74dd1656-e6e7-47cf-93be-8d6bc588ab4b",
+              "name": "eventType",
+              "value": "={{ $json.body.eventType || 'customer.updated' }}",
+              "type": "string"
+            },
+            {
+              "id": "052d4939-87b4-473e-8f4c-974db2941bb9",
+              "name": "receivedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "4be429f8-5ca6-49ea-a1f0-ceb6e3edcd9a",
+      "name": "Extract Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -820,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "9db0ce4c-6820-4a8c-bfd4-22e31c6981ff",
+              "leftValue": "={{ $json.customerId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e87bf5cc-fcbd-4aa8-893b-963eb85a9f5c",
+      "name": "Has Customer ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.ERP_API_BASE_URL + '/customers/' + $json.customerId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.ERP_API_TOKEN }}"
+            },
+            {
+              "name": "X-Request-Id",
+              "value": "={{ $json.eventId }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "8c25c1db-9657-4acc-809c-064c3ff27f51",
+      "name": "Get Customer From ERP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -360,
+        -120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $json.customer ?? $json.data ?? $json;\n\nconst email = source.email || source.contact?.email;\nconst externalId = source.id || source.customerId || $('Extract Payload').first().json.customerId;\n\nreturn [\n  {\n    json: {\n      eventId: $('Extract Payload').first().json.eventId,\n      eventType: $('Extract Payload').first().json.eventType,\n      receivedAt: $('Extract Payload').first().json.receivedAt,\n      externalId,\n      name: source.name || source.legalName || source.tradeName,\n      email,\n      phone: source.phone || source.contact?.phone,\n      document: source.document || source.taxId || source.cnpj || source.cpf,\n      status: source.status || 'active',\n      address: {\n        street: source.address?.street,\n        number: source.address?.number,\n        city: source.address?.city,\n        state: source.address?.state,\n        postalCode: source.address?.postalCode || source.address?.zipCode,\n        country: source.address?.country || 'BR'\n      },\n      erpUpdatedAt: source.updatedAt || source.modifiedAt || null\n    }\n  }\n];"
+      },
+      "id": "d5acfc64-6488-4c0d-b181-68313c3ea89d",
+      "name": "Normalize Customer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.CRM_API_BASE_URL + '/contacts/search' }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "externalId",
+              "value": "={{ $json.externalId }}"
+            },
+            {
+              "name": "email",
+              "value": "={{ $json.email }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.CRM_API_TOKEN }}"
+            },
+            {
+              "name": "X-Request-Id",
+              "value": "={{ $json.eventId }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "1991bfc5-b50c-4335-a04d-d32e21c0b70f",
+      "name": "Find Customer In CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        120,
+        -120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f9379825-31bd-48c7-9ef9-08f5c8d6af4e",
+              "name": "crmContactId",
+              "value": "={{ $json.id || $json.contact?.id || $json.data?.[0]?.id || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "d55d5f69-a06e-4d45-9642-4a9d07fbd82b7",
+              "name": "customer",
+              "value": "={{ $('Normalize Customer').first().json }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9c4d9c06-81bd-4b37-874a-73a4abe054d6",
+      "name": "Prepare CRM Upsert",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        360,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "8913e495-a4f4-405d-8a49-29715c1fbdc1",
+              "leftValue": "={{ $json.crmContactId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f6eab868-3f8e-4c51-b147-473cecc3a368",
+      "name": "Contact Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        600,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.CRM_API_BASE_URL + '/contacts/' + $json.crmContactId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.CRM_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Request-Id",
+              "value": "={{ $json.customer.eventId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.customer }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "8fdd4ea5-079b-4d98-b142-269d06ec6c1ff",
+      "name": "Update CRM Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        -220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CRM_API_BASE_URL + '/contacts' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.CRM_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Request-Id",
+              "value": "={{ $json.customer.eventId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.customer }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "47f0f667-465a-4589-9f8b-9fc962085e11",
+      "name": "Create CRM Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        -20
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5615c0df-e8f9-45de-aa2d-15eb2346f59d",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "55a01731-fd3c-42f4-bc3c-b774bd8f3a77",
+              "name": "message",
+              "value": "Customer synchronized successfully",
+              "type": "string"
+            },
+            {
+              "id": "52174607-ad49-4a91-9551-fae720a84cde",
+              "name": "crmResponse",
+              "value": "={{ $json }}",
+              "type": "object"
+            },
+            {
+              "id": "b2ba391e-d5c2-4986-8779-d7702f232b75",
+              "name": "syncedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e5cd7695-7248-4de2-a23b-cb0adcb09dd4",
+      "name": "Build Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1080,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "5295b675-2296-4f4c-895b-e930392af3d0",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0bceef11-9358-4b0a-9e39-0166702b8d20",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "6ff5ca4f-b2ff-4d02-bd8c-281ad6d22040",
+              "name": "message",
+              "value": "Missing customerId in webhook payload",
+              "type": "string"
+            },
+            {
+              "id": "f081fece-d11f-4ad5-acf2-07c07cc66b19",
+              "name": "receivedAt",
+              "value": "={{ $json.receivedAt }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "03b29b42-2e75-4ff7-9f69-b34ce19dfcf4",
+      "name": "Build Validation Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -360,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "eb17640d-e7cf-4f91-8d3a-d444c9d2ef6f",
+      "name": "Respond Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -120,
+        160
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Receive ERP Event": {
+      "main": [
+        [
+          {
+            "node": "Extract Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Payload": {
+      "main": [
+        [
+          {
+            "node": "Has Customer ID?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Customer ID?": {
+      "main": [
+        [
+          {
+            "node": "Get Customer From ERP",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Customer From ERP": {
+      "main": [
+        [
+          {
+            "node": "Normalize Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Customer": {
+      "main": [
+        [
+          {
+            "node": "Find Customer In CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Customer In CRM": {
+      "main": [
+        [
+          {
+            "node": "Prepare CRM Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare CRM Upsert": {
+      "main": [
+        [
+          {
+            "node": "Contact Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact Exists?": {
+      "main": [
+        [
+          {
+            "node": "Update CRM Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create CRM Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update CRM Contact": {
+      "main": [
+        [
+          {
+            "node": "Build Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create CRM Contact": {
+      "main": [
+        [
+          {
+            "node": "Build Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Success Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "95cb9444-6f8a-4d84-8f14-57718bb0b8e6",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "ERPCRM001",
+  "tags": [
+    {
+      "name": "ERP"
+    },
+    {
+      "name": "CRM"
+    },
+    {
+      "name": "Sync"
+    }
+  ]
+}
