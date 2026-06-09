@@ -20,4 +20,4 @@ Workflow responsible for synchronizing customers between ERP and CRM systems.
 
 ## Workflow
 
-(screenshot aqui)
+![Workflow Screenshot](workflow.png)
