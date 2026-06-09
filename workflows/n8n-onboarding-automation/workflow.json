@@ -1,0 +1,464 @@
+{
+  "name": "n8n Onboarding Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "onboarding-automation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f0e19cdd-0db0-4e13-a26b-1d82839c5d8f",
+      "name": "Receive Onboarding Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -980,
+        0
+      ],
+      "webhookId": "onboarding-automation"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d0401d27-404e-4bd8-8b11-53080164600e",
+              "name": "requestId",
+              "value": "={{ $json.body.requestId || $json.headers['x-request-id'] || $execution.id }}",
+              "type": "string"
+            },
+            {
+              "id": "b16ad3bd-0302-428a-b93f-76e5da0bc1ce",
+              "name": "customer",
+              "value": "={{ $json.body.customer || {} }}",
+              "type": "object"
+            },
+            {
+              "id": "f28b606d-526c-40a9-828a-2c3028939d03",
+              "name": "owner",
+              "value": "={{ $json.body.owner || {} }}",
+              "type": "object"
+            },
+            {
+              "id": "1cc0cc97-5906-4b43-ad4f-b02e681675c6",
+              "name": "receivedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4532cd4a-a71a-4371-916a-6f8e0f44e423",
+      "name": "Extract Onboarding Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const customer = $json.customer || {};\nconst requiredFields = ['name', 'email'];\nconst missingFields = requiredFields.filter((field) => !customer[field]);\n\nreturn [\n  {\n    json: {\n      ...$json,\n      isValid: missingFields.length === 0,\n      missingFields\n    }\n  }\n];"
+      },
+      "id": "25ae03dc-1160-4a06-897c-1a5909809cd2",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "8028862d-230d-49f5-9f18-1a9f319b1f1d",
+              "leftValue": "={{ $json.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aab213ac-188b-4220-a07b-16ff17d67dfd",
+      "name": "Request Is Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CRM_API_BASE_URL + '/customers/upsert' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.CRM_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Request-Id",
+              "value": "={{ $json.requestId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { externalId: $json.customer.document || $json.customer.email, name: $json.customer.name, email: $json.customer.email, document: $json.customer.document, plan: $json.customer.plan || 'standard', ownerEmail: $json.owner.email } }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "6ded851c-5b32-4122-bb21-a8088e0f3c8b",
+      "name": "Upsert CRM Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        -120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TASK_API_BASE_URL + '/tasks' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.TASK_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { title: 'Onboard ' + $('Extract Onboarding Data').first().json.customer.name, status: 'open', priority: 'high', assigneeEmail: $('Extract Onboarding Data').first().json.owner.email, customerEmail: $('Extract Onboarding Data').first().json.customer.email, source: 'n8n-onboarding-automation' } }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "f7b2cd2e-79c0-479f-855e-f90358c495ce",
+      "name": "Create Onboarding Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        -120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MAIL_API_BASE_URL + '/messages' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.MAIL_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { to: $('Extract Onboarding Data').first().json.customer.email, subject: 'Welcome to your onboarding', template: 'customer-welcome', variables: { customerName: $('Extract Onboarding Data').first().json.customer.name, plan: $('Extract Onboarding Data').first().json.customer.plan || 'standard' } } }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "19ef42b3-bc86-4cc3-89ce-55947b93e187",
+      "name": "Send Welcome Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        -120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1fe97562-a58d-4215-a928-432b5d89fb2a",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "8690998c-e450-444f-b4af-60f1a0ac5c1f",
+              "name": "message",
+              "value": "Customer onboarding started successfully",
+              "type": "string"
+            },
+            {
+              "id": "ab54bc52-9fc3-41af-8b76-6dbfd86165d5",
+              "name": "customer",
+              "value": "={{ $('Extract Onboarding Data').first().json.customer }}",
+              "type": "object"
+            },
+            {
+              "id": "6d703860-ea7c-4388-8f6b-e44c639f781c",
+              "name": "completedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b8ba0e8e-8151-4d54-861f-e7e810cc8585",
+      "name": "Build Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        640,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "b80193ad-c1e7-4472-a89d-6467f8261716",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e6ebfb87-6a37-4a3f-9e88-57815d9f6b3f",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "ce397af5-9a82-407a-b34b-09344b07f310",
+              "name": "message",
+              "value": "Invalid onboarding request",
+              "type": "string"
+            },
+            {
+              "id": "ef0136ef-d3d6-4c2d-97f9-03c66ad7c8fd",
+              "name": "missingFields",
+              "value": "={{ $json.missingFields }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "972c729e-d6f8-4b9d-9f1b-37bcc082f142",
+      "name": "Build Validation Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -80,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "f207c3e1-42ff-498b-91da-9cd808ed3e70",
+      "name": "Respond Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        140
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Receive Onboarding Request": {
+      "main": [
+        [
+          {
+            "node": "Extract Onboarding Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Onboarding Data": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Request Is Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Is Valid?": {
+      "main": [
+        [
+          {
+            "node": "Upsert CRM Customer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert CRM Customer": {
+      "main": [
+        [
+          {
+            "node": "Create Onboarding Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Onboarding Task": {
+      "main": [
+        [
+          {
+            "node": "Send Welcome Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Welcome Email": {
+      "main": [
+        [
+          {
+            "node": "Build Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Success Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "versionId": "9477060b-c8c2-4475-92f5-4f9f97613d2b",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "ONBOARDING001",
+  "tags": [
+    {
+      "name": "Onboarding"
+    },
+    {
+      "name": "CRM"
+    },
+    {
+      "name": "Automation"
+    }
+  ]
+}

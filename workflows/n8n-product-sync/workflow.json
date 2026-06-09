@@ -1,0 +1,504 @@
+{
+  "name": "n8n Product Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "product-sync",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0e646f3e-3520-4bea-8815-8d9ec5a40238",
+      "name": "Receive Product Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -980,
+        0
+      ],
+      "webhookId": "product-sync"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3a218a09-747e-48d7-84b5-5eee6d7d6ba2",
+              "name": "eventId",
+              "value": "={{ $json.body.eventId || $json.headers['x-request-id'] || $execution.id }}",
+              "type": "string"
+            },
+            {
+              "id": "702b5f01-512e-4665-b17e-0453e6f52937",
+              "name": "eventType",
+              "value": "={{ $json.body.eventType || 'product.updated' }}",
+              "type": "string"
+            },
+            {
+              "id": "98a71e77-3053-4a41-9190-bbfb5ac19f0f",
+              "name": "productId",
+              "value": "={{ $json.body.productId || $json.body.product?.id }}",
+              "type": "string"
+            },
+            {
+              "id": "5f3995dd-4a1e-44fd-9bc2-3f0a70a5f5e8",
+              "name": "receivedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "08b4f2bd-7cd7-4b42-9117-5c699d5f9292",
+      "name": "Extract Product Event",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "d1757b2a-fb5e-45b9-8e74-f9130e0c5f3a",
+              "leftValue": "={{ $json.productId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "842bc0cd-5ac0-494f-92b9-f64b1a04d64f",
+      "name": "Has Product ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.ERP_API_BASE_URL + '/products/' + $json.productId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.ERP_API_TOKEN }}"
+            },
+            {
+              "name": "X-Request-Id",
+              "value": "={{ $json.eventId }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "7025f0ad-20a8-43cc-8545-64fdbf11bc2a",
+      "name": "Get Product Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -300,
+        -120
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $json.product ?? $json.data ?? $json;\nconst event = $('Extract Product Event').first().json;\n\nreturn [\n  {\n    json: {\n      eventId: event.eventId,\n      eventType: event.eventType,\n      sourceProductId: source.id || event.productId,\n      sku: source.sku || source.code,\n      name: source.name || source.title,\n      description: source.description || '',\n      price: Number(source.price || source.salePrice || 0),\n      cost: Number(source.cost || 0),\n      currency: source.currency || 'BRL',\n      inventory: Number(source.inventory || source.stock || 0),\n      active: source.active ?? source.status !== 'inactive',\n      categories: source.categories || [],\n      images: source.images || [],\n      updatedAt: source.updatedAt || source.modifiedAt || null,\n      syncedAt: $now.toISO()\n    }\n  }\n];"
+      },
+      "id": "01e1784b-bd27-451f-9711-f8caec9bdc31",
+      "name": "Normalize Product",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -60,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c25d548f-a2f0-4690-a41c-b436d0342b6b",
+              "leftValue": "={{ $json.sku }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7392d3c7-80c6-4ad5-872b-d9ddda10f7c8",
+      "name": "Has SKU?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        180,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $env.CATALOG_API_BASE_URL + '/products/' + $json.sku }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.CATALOG_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Request-Id",
+              "value": "={{ $json.eventId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "295b8553-5110-4f0f-8a2a-4927640ef149",
+      "name": "Upsert Catalog Product",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        420,
+        -220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "dbb87295-f6f6-42db-8c70-205733460f7e",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "f9df92d8-79a5-438a-81eb-93308fd1b570",
+              "name": "message",
+              "value": "Product synchronized successfully",
+              "type": "string"
+            },
+            {
+              "id": "f9d5e2e9-ec72-4282-b0f4-988c3abe17ec",
+              "name": "catalogResponse",
+              "value": "={{ $json }}",
+              "type": "object"
+            },
+            {
+              "id": "8b9d316a-84b9-42fc-8a46-98e574dd1382",
+              "name": "completedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "319b1dd3-29ca-43b9-a0f7-82ed295ecee6",
+      "name": "Build Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        660,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a60f762b-af1b-42a1-ad26-1537e78022ce",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b74758e4-01c6-4858-a67c-af760536a9a8",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "3139d61b-059a-4663-a661-74003cbf508d",
+              "name": "message",
+              "value": "Missing productId in webhook payload",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6c2cd9d4-a98f-47a8-b473-1733339e44b9",
+      "name": "Build Product ID Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -300,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d643180f-cae5-41ff-81a3-e676e34b31db",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "c9112164-93c0-442d-bd7b-503cd2375c26",
+              "name": "message",
+              "value": "Product cannot be synchronized without SKU",
+              "type": "string"
+            },
+            {
+              "id": "d09c3ab3-e58c-49f9-9804-dd6c85f9f7fb",
+              "name": "product",
+              "value": "={{ $json }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "49e19f12-19d1-40e1-8a43-ad240d6a255d",
+      "name": "Build SKU Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "92601d19-a8d1-46a8-b2d9-c26b0e8a820d",
+      "name": "Respond Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        80
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Receive Product Event": {
+      "main": [
+        [
+          {
+            "node": "Extract Product Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Product Event": {
+      "main": [
+        [
+          {
+            "node": "Has Product ID?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Product ID?": {
+      "main": [
+        [
+          {
+            "node": "Get Product Details",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Product ID Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Product Details": {
+      "main": [
+        [
+          {
+            "node": "Normalize Product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Product": {
+      "main": [
+        [
+          {
+            "node": "Has SKU?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has SKU?": {
+      "main": [
+        [
+          {
+            "node": "Upsert Catalog Product",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build SKU Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Catalog Product": {
+      "main": [
+        [
+          {
+            "node": "Build Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Success Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Product ID Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build SKU Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "versionId": "90fb6982-0705-477d-a0b6-a73f96308b87",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "id": "PRODUCTSYNC001",
+  "tags": [
+    {
+      "name": "Product Sync"
+    },
+    {
+      "name": "ERP"
+    },
+    {
+      "name": "Catalog"
+    }
+  ]
+}

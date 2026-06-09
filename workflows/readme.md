@@ -6,6 +6,6 @@ Portfolio of automation workflows focused on ERP, CRM, API integrations and busi
 
 | Project | Description |
 |----------|-------------|
-| ERP CRM Sync | Customer synchronization between ERP and CRM |
-| Customer Onboarding | Automated onboarding workflow |
-| Product Sync | Product catalog synchronization |
+| [ERP CRM Sync](./erp-crm-sync) | Customer synchronization between ERP and CRM |
+| [n8n Onboarding Automation](./n8n-onboarding-automation) | Automated customer onboarding workflow |
+| [n8n Product Sync](./n8n-product-sync) | Product catalog synchronization |
