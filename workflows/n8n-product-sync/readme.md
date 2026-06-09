@@ -34,4 +34,4 @@ Workflow responsible for synchronizing product catalog data from an ERP or comme
 
 ## Workflow
 
-(screenshot aqui)
+![Workflow Screenshot](./product-sync.png)

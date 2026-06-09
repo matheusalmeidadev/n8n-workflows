@@ -43,4 +43,4 @@ Workflow responsible for automating the customer onboarding process after a new 
 
 ## Workflow
 
-(screenshot aqui)
+![Workflow Screenshot](./onboarding.png)
